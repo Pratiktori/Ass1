@@ -55,7 +55,7 @@ export class RestAPIStack extends cdk.Stack {
         memorySize: 128,
         environment: {
           TABLE_NAME: moviesTable.tableName,
-          REGION: "us-east-1",
+          REGION: "eu-west-1",
         },
       }
     );
@@ -71,7 +71,7 @@ export class RestAPIStack extends cdk.Stack {
         memorySize: 128,
         environment: {
           TABLE_NAME: movieCastsTable.tableName,
-          REGION: "us-east-1",
+          REGION: "eu-west-1",
         },
       }
     );
@@ -87,7 +87,7 @@ export class RestAPIStack extends cdk.Stack {
         memorySize: 128,
         environment: {
           TABLE_NAME: moviesTable.tableName,
-          REGION: "us-east-1",
+          REGION: "eu-west-1",
         },
       }
     );
@@ -100,7 +100,7 @@ export class RestAPIStack extends cdk.Stack {
       memorySize: 128,
       environment: {
         TABLE_NAME: moviesTable.tableName,
-        REGION: "us-east-1",
+        REGION: "eu-west-1",
       },
     });
 
@@ -111,7 +111,7 @@ export class RestAPIStack extends cdk.Stack {
       environment: {
         MOVIES_TABLE_NAME: moviesTable.tableName,
         CAST_TABLE_NAME: movieCastsTable.tableName,
-        REGION: "us-east-1",
+        REGION: "eu-west-1",
       },
     });
 
@@ -123,7 +123,7 @@ export class RestAPIStack extends cdk.Stack {
       memorySize: 128,
       environment: {
         TABLE_NAME: moviesTable.tableName,
-        REGION: "us-east-1",
+        REGION: "eu-west-1",
       },
     });
 
@@ -139,7 +139,7 @@ export class RestAPIStack extends cdk.Stack {
         memorySize: 128,
         environment: {
           REVIEWS_TABLE_NAME: reviewsTable.tableName,
-          REGION: "us-east-1",
+          REGION: "eu-west-1",
         },
       }
     );
@@ -156,7 +156,7 @@ export class RestAPIStack extends cdk.Stack {
         memorySize: 128,
         environment: {
           REVIEWS_TABLE_NAME: reviewsTable.tableName,
-          REGION: "us-east-1",
+          REGION: "eu-west-1",
         },
       }
     );
@@ -173,7 +173,24 @@ export class RestAPIStack extends cdk.Stack {
         memorySize: 128,
         environment: {
           REVIEWS_TABLE_NAME: reviewsTable.tableName,
-          REGION: "us-east-1",
+          REGION: "eu-west-1",
+        },
+      }
+    );
+
+    // NEW: translateMovieReview Lambda
+    const translateMovieReviewFn = new lambdanode.NodejsFunction(
+      this,
+      "TranslateMovieReviewFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/getTranslateMovieReview.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          REVIEWS_TABLE_NAME: reviewsTable.tableName,
+          REGION: "eu-west-1",
         },
       }
     );
@@ -206,6 +223,7 @@ export class RestAPIStack extends cdk.Stack {
     reviewsTable.grantReadData(getMovieReviewsFn);
     reviewsTable.grantReadWriteData(postMovieReviewFn);
     reviewsTable.grantReadWriteData(updateMovieReviewFn);
+    reviewsTable.grantReadData(translateMovieReviewFn);
 
     const api = new apig.RestApi(this, "RestAPI", {
       description: "demo api",
@@ -265,8 +283,6 @@ export class RestAPIStack extends cdk.Stack {
     );
 
     const specificReviewEndpoint = movieReviewsEndpoint.addResource("{reviewId}");
-
-    // NEW: PUT /movies/{movieId}/reviews/{reviewId}
     specificReviewEndpoint.addMethod(
       "PUT",
       new apig.LambdaIntegration(updateMovieReviewFn, { proxy: true })
@@ -282,5 +298,17 @@ export class RestAPIStack extends cdk.Stack {
       }),
       authorizationType: apig.AuthorizationType.COGNITO,
     });
+
+    // NEW: Translation endpoint
+    const translationEndpoint = specificReviewEndpoint.addResource("{movieId}").addResource("translation");
+    translationEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(translateMovieReviewFn, { proxy: true }),
+      {
+        requestParameters: {
+          "method.request.querystring.language": false,
+        },
+      }
+    );
   }
 }
