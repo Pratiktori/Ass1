@@ -7,13 +7,14 @@ import { Construct } from "constructs";
 import { generateBatch } from "../shared/util";
 import { movies, movieCasts } from "../seed/movies";
 import * as apig from "aws-cdk-lib/aws-apigateway";
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 
 export class RestAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     // Tables
-    const moviesTable = new dynamodb.Table(this, "MoviesTable", {
+    const moviesTable = new dynamodb.Table(this, "MoviesTablee", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -126,7 +127,6 @@ export class RestAPIStack extends cdk.Stack {
       },
     });
 
-    // NEW: getMovieReviews Lambda
     const getMovieReviewsFn = new lambdanode.NodejsFunction(
       this,
       "GetMovieReviewsFn",
@@ -134,6 +134,23 @@ export class RestAPIStack extends cdk.Stack {
         architecture: lambda.Architecture.ARM_64,
         runtime: lambda.Runtime.NODEJS_18_X,
         entry: `${__dirname}/../lambdas/getMovieReviews.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          REVIEWS_TABLE_NAME: reviewsTable.tableName,
+          REGION: "us-east-1",
+        },
+      }
+    );
+
+    // NEW: postMovieReview Lambda
+    const postMovieReviewFn = new lambdanode.NodejsFunction(
+      this,
+      "PostMovieReviewFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/postMovieReview.ts`,
         timeout: cdk.Duration.seconds(10),
         memorySize: 128,
         environment: {
@@ -168,9 +185,10 @@ export class RestAPIStack extends cdk.Stack {
     movieCastsTable.grantReadData(getMovieCastMembersFn);
     moviesTable.grantReadData(getMovieFn);
     movieCastsTable.grantReadData(getMovieFn);
+    reviewsTable.grantReadData(getMovieReviewsFn);
 
-    // NEW: Grant read permission to getMovieReviews
-    reviewsTable.grantReadData(getMovieReviewsFn); // Grant access to reviews table
+    // NEW: Grant write permission to postMovieReview
+    reviewsTable.grantWriteData(postMovieReviewFn);
 
     const api = new apig.RestApi(this, "RestAPI", {
       description: "demo api",
@@ -178,7 +196,7 @@ export class RestAPIStack extends cdk.Stack {
         stageName: "dev",
       },
       defaultCorsPreflightOptions: {
-        allowHeaders: ["Content-Type", "X-Amz-Date"],
+        allowHeaders: ["Content-Type", "X-Amz-Date", "Authorization"],
         allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
         allowCredentials: true,
         allowOrigins: ["*"],
@@ -216,8 +234,8 @@ export class RestAPIStack extends cdk.Stack {
       new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
     );
 
-    // NEW: Movie Reviews endpoint
     const movieReviewsEndpoint = specificMovieEndpoint.addResource("reviews");
+
     movieReviewsEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieReviewsFn, { proxy: true }),
@@ -228,5 +246,24 @@ export class RestAPIStack extends cdk.Stack {
         },
       }
     );
+         // Get the user pool id from the environment variables
+         const userPoolId = process.env.COGNITO_USER_POOL_ID || 'your-user-pool-id';
+
+         // Get the user pool client id from the environment variables
+         const userPoolClientId = process.env.COGNITO_USER_POOL_CLIENT_ID || 'your-user-pool-client-id';
+     
+         // Create a Cognito User Pool authorizer
+         const authorizer = new apig.CognitoUserPoolsAuthorizer(this, 'UserPoolAuthorizer', {
+             cognitoUserPools: [
+                 cognito.UserPool.fromUserPoolId(this, 'UserPool', userPoolId)
+             ],
+             authorizerName: 'MovieReviewsAuthorizer'
+         });
+     
+         // Add POST method for adding movie reviews with the authorizer
+         movieReviewsEndpoint.addMethod('POST', new apig.LambdaIntegration(postMovieReviewFn), {
+             authorizer: authorizer,
+             authorizationType: apig.AuthorizationType.COGNITO,
+         });
   }
 }
