@@ -14,7 +14,7 @@ export class RestAPIStack extends cdk.Stack {
     super(scope, id, props);
 
     // Tables
-    const moviesTable = new dynamodb.Table(this, "MoviesTablee", {
+    const moviesTable = new dynamodb.Table(this, "MoviesTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -127,6 +127,7 @@ export class RestAPIStack extends cdk.Stack {
       },
     });
 
+    // NEW: getMovieReviews Lambda
     const getMovieReviewsFn = new lambdanode.NodejsFunction(
       this,
       "GetMovieReviewsFn",
@@ -151,6 +152,23 @@ export class RestAPIStack extends cdk.Stack {
         architecture: lambda.Architecture.ARM_64,
         runtime: lambda.Runtime.NODEJS_18_X,
         entry: `${__dirname}/../lambdas/postMovieReview.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          REVIEWS_TABLE_NAME: reviewsTable.tableName,
+          REGION: "us-east-1",
+        },
+      }
+    );
+
+    // NEW: updateMovieReview Lambda
+    const updateMovieReviewFn = new lambdanode.NodejsFunction(
+      this,
+      "UpdateMovieReviewFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/updateMovieReview.ts`,
         timeout: cdk.Duration.seconds(10),
         memorySize: 128,
         environment: {
@@ -186,9 +204,8 @@ export class RestAPIStack extends cdk.Stack {
     moviesTable.grantReadData(getMovieFn);
     movieCastsTable.grantReadData(getMovieFn);
     reviewsTable.grantReadData(getMovieReviewsFn);
-
-    // NEW: Grant write permission to postMovieReview
-    reviewsTable.grantWriteData(postMovieReviewFn);
+    reviewsTable.grantReadWriteData(postMovieReviewFn);
+    reviewsTable.grantReadWriteData(updateMovieReviewFn);
 
     const api = new apig.RestApi(this, "RestAPI", {
       description: "demo api",
@@ -234,8 +251,8 @@ export class RestAPIStack extends cdk.Stack {
       new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
     );
 
+    // NEW: Movie Reviews endpoint
     const movieReviewsEndpoint = specificMovieEndpoint.addResource("reviews");
-
     movieReviewsEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieReviewsFn, { proxy: true }),
@@ -246,24 +263,24 @@ export class RestAPIStack extends cdk.Stack {
         },
       }
     );
-         // Get the user pool id from the environment variables
-         const userPoolId = process.env.COGNITO_USER_POOL_ID || 'your-user-pool-id';
 
-         // Get the user pool client id from the environment variables
-         const userPoolClientId = process.env.COGNITO_USER_POOL_CLIENT_ID || 'your-user-pool-client-id';
-     
-         // Create a Cognito User Pool authorizer
-         const authorizer = new apig.CognitoUserPoolsAuthorizer(this, 'UserPoolAuthorizer', {
-             cognitoUserPools: [
-                 cognito.UserPool.fromUserPoolId(this, 'UserPool', userPoolId)
-             ],
-             authorizerName: 'MovieReviewsAuthorizer'
-         });
-     
-         // Add POST method for adding movie reviews with the authorizer
-         movieReviewsEndpoint.addMethod('POST', new apig.LambdaIntegration(postMovieReviewFn), {
-             authorizer: authorizer,
-             authorizationType: apig.AuthorizationType.COGNITO,
-         });
+    const specificReviewEndpoint = movieReviewsEndpoint.addResource("{reviewId}");
+
+    // NEW: PUT /movies/{movieId}/reviews/{reviewId}
+    specificReviewEndpoint.addMethod(
+      "PUT",
+      new apig.LambdaIntegration(updateMovieReviewFn, { proxy: true })
+    );
+
+    // NEW: POST /movies/{movieId}/reviews
+    movieReviewsEndpoint.addMethod('POST', new apig.LambdaIntegration(postMovieReviewFn), {
+      authorizer: new apig.CognitoUserPoolsAuthorizer(this, 'UserPoolAuthorizer', {
+        cognitoUserPools: [
+          cognito.UserPool.fromUserPoolId(this, 'UserPool', process.env.COGNITO_USER_POOL_ID || 'your-user-pool-id')
+        ],
+        authorizerName: 'MovieReviewsAuthorizer'
+      }),
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
   }
 }
