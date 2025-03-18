@@ -14,7 +14,7 @@ export class RestAPIStack extends cdk.Stack {
     super(scope, id, props);
 
     // Tables
-    const moviesTable = new dynamodb.Table(this, "MoviesTable", {
+    const moviesTable = new dynamodb.Table(this, "MoviesTablee", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -300,7 +300,7 @@ export class RestAPIStack extends cdk.Stack {
     });
 
     // NEW: Translation endpoint
-    const translationEndpoint = specificReviewEndpoint.addResource("{movieId}").addResource("translation");
+    const translationEndpoint = specificReviewEndpoint.addResource("translation");
     translationEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(translateMovieReviewFn, { proxy: true }),
