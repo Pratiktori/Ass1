@@ -27,15 +27,28 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       };
     }
 
+    // Get reviewerId from JWT claims if available
+    const reviewerId = event.requestContext?.authorizer?.jwt?.claims?.email;
+
+    if (!reviewerId) {
+      return {
+        statusCode: 401,
+        body: JSON.stringify({ message: "Unauthorized" }),
+      };
+    }
+
     const updateCommand = new UpdateCommand({
-      TableName: process.env.REVIEWS_TABLE_NAME,
+      TableName: "MovieReviews",
       Key: {
         movieId: parseInt(movieId),
-        reviewId: reviewId,
+        reviewId: parseInt(reviewId), // Ensure reviewId is a number
       },
-      UpdateExpression: "set content = :content",
+      UpdateExpression: "set content = :content, reviewDate = :reviewDate",
+      ConditionExpression: "ReviewerId = :reviewerId", // Ensure only owner can update
       ExpressionAttributeValues: {
         ":content": content,
+        ":reviewDate": new Date().toISOString().split("T")[0], // Update reviewDate
+        ":reviewerId": reviewerId,
       },
       ReturnValues: "ALL_NEW",
     });
@@ -49,6 +62,12 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   } catch (error) {
     console.error("Error:", error);
+    if (error.name === "ConditionalCheckFailedException") {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({ message: "Forbidden: You are not authorized to update this review" }),
+      };
+    }
     return {
       statusCode: 500,
       body: JSON.stringify({ message: "Internal server error", error }),
@@ -57,6 +76,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 };
 
 function createDDbDocClient() {
-  const ddbClient = new DynamoDBClient({ region: process.env.REGION });
+  const ddbClient = new DynamoDBClient({ region: "eu-west-1" });
   return DynamoDBDocumentClient.from(ddbClient);
 }

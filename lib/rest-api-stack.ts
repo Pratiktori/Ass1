@@ -40,7 +40,7 @@ export class RestAPIStack extends cdk.Stack {
       partitionKey: { name: "movieId", type: dynamodb.AttributeType.NUMBER },
       sortKey: { name: "reviewId", type: dynamodb.AttributeType.STRING },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      tableName: "Reviews",
+      tableName: "MovieReviews",
     });
 
     // Functions

@@ -2,19 +2,16 @@ import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { 
   DynamoDBDocumentClient, 
-  QueryCommand,
-  ScanCommand
+  QueryCommand
 } from "@aws-sdk/lib-dynamodb";
 
-const ddbClient = new DynamoDBClient({ region: process.env.REGION });
+const ddbClient = new DynamoDBClient({ region: 'eu-west-1' });
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   try {
     console.log("[EVENT]", JSON.stringify(event));
     const movieId = event.pathParameters?.movieId;
-    const reviewId = event.queryStringParameters?.reviewId;
-    const reviewerEmail = event.queryStringParameters?.reviewerEmail;
 
     if (!movieId) {
       return {
@@ -24,39 +21,13 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       };
     }
 
-    let command;
-    if (reviewId) {
-      // Get specific review
-      command = new QueryCommand({
-        TableName: process.env.REVIEWS_TABLE_NAME,
-        KeyConditionExpression: "movieId = :movieId AND reviewId = :reviewId",
-        ExpressionAttributeValues: {
-          ":movieId": parseInt(movieId),
-          ":reviewId": reviewId
-        }
-      });
-    } else if (reviewerEmail) {
-      // Search by reviewer email (using GSI)
-      command = new QueryCommand({
-        TableName: process.env.REVIEWS_TABLE_NAME,
-        IndexName: "ReviewerEmailIndex",
-        KeyConditionExpression: "reviewerEmail = :email",
-        FilterExpression: "movieId = :movieId",
-        ExpressionAttributeValues: {
-          ":email": reviewerEmail,
-          ":movieId": parseInt(movieId)
-        }
-      });
-    } else {
-      // Get all reviews for movie
-      command = new QueryCommand({
-        TableName: process.env.REVIEWS_TABLE_NAME,
-        KeyConditionExpression: "movieId = :movieId",
-        ExpressionAttributeValues: {
-          ":movieId": parseInt(movieId)
-        }
-      });
-    }
+    const command = new QueryCommand({
+      TableName: 'MovieReviews',
+      KeyConditionExpression: "movieId = :movieId",
+      ExpressionAttributeValues: {
+        ":movieId": parseInt(movieId)
+      }
+    });
 
     const result = await ddbDocClient.send(command);
 

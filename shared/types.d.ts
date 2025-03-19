@@ -31,6 +31,14 @@ export type MovieCastMemberQueryParams = {
   roleName?: string;
 };
 
+export type MovieReviews  = {
+  movieId: number;
+  ReviewId : number;
+  ReviewerId : string;
+  ReviewDate : string;
+  Content : string;
+};
+
  
 export type SignUpBody = {
   username: string;
