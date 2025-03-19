@@ -260,10 +260,12 @@ export class RestAPIStack extends cdk.Stack {
 
     // Detail movie endpoint
     const specificMovieEndpoint = moviesEndpoint.addResource("{movieId}");
+
     specificMovieEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
     );
+
     specificMovieEndpoint.addMethod(
       "DELETE",
       new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
@@ -271,6 +273,7 @@ export class RestAPIStack extends cdk.Stack {
 
     // NEW: Movie Reviews endpoint
     const movieReviewsEndpoint = specificMovieEndpoint.addResource("reviews");
+
     movieReviewsEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieReviewsFn, { proxy: true }),
@@ -282,13 +285,6 @@ export class RestAPIStack extends cdk.Stack {
       }
     );
 
-    const specificReviewEndpoint = movieReviewsEndpoint.addResource("{reviewId}");
-    specificReviewEndpoint.addMethod(
-      "PUT",
-      new apig.LambdaIntegration(updateMovieReviewFn, { proxy: true })
-    );
-
-    // NEW: POST /movies/{movieId}/reviews
     movieReviewsEndpoint.addMethod('POST', new apig.LambdaIntegration(postMovieReviewFn), {
       authorizer: new apig.CognitoUserPoolsAuthorizer(this, 'UserPoolAuthorizer', {
         cognitoUserPools: [
@@ -299,8 +295,16 @@ export class RestAPIStack extends cdk.Stack {
       authorizationType: apig.AuthorizationType.COGNITO,
     });
 
+    const specificReviewEndpoint = movieReviewsEndpoint.addResource("{reviewId}");
+
+    specificReviewEndpoint.addMethod(
+      "PUT",
+      new apig.LambdaIntegration(updateMovieReviewFn, { proxy: true })
+    );
+
     // NEW: Translation endpoint
     const translationEndpoint = specificReviewEndpoint.addResource("translation");
+
     translationEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(translateMovieReviewFn, { proxy: true }),
