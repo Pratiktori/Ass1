@@ -1,9 +1,6 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { 
-  DynamoDBDocumentClient, 
-  QueryCommand
-} from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 const ddbClient = new DynamoDBClient({ region: 'eu-west-1' });
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
@@ -21,14 +18,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       };
     }
 
-    const command = new QueryCommand({
+    const params = {
       TableName: 'MovieReviews',
       KeyConditionExpression: "movieId = :movieId",
       ExpressionAttributeValues: {
-        ":movieId": parseInt(movieId)
-      }
-    });
-
+        ":movieId":  { N: movieId }
+      },
+    };
+    const command = new QueryCommand(params);
     const result = await ddbDocClient.send(command);
 
     return {

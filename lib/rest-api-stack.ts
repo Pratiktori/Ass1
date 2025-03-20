@@ -4,10 +4,9 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
-import { generateBatch } from "../shared/util";
-import { movies, movieCasts } from "../seed/movies";
 import * as apig from "aws-cdk-lib/aws-apigateway";
-import * as cognito from 'aws-cdk-lib/aws-cognito';
+import { movies, movieCasts, movieReviews } from "../seed/movies";
+import { generateBatch } from "../shared/util";
 
 export class RestAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -41,6 +40,18 @@ export class RestAPIStack extends cdk.Stack {
       sortKey: { name: "reviewId", type: dynamodb.AttributeType.STRING },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       tableName: "MovieReviews",
+    });
+
+    // NEW: Translate Lambda
+    const translateFn = new lambdanode.NodejsFunction(this, "TranslateFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/translate.ts`, // Path to your translate.ts
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        REGION: "eu-west-1",
+      }
     });
 
     // Functions
@@ -178,22 +189,19 @@ export class RestAPIStack extends cdk.Stack {
       }
     );
 
-    // NEW: translateMovieReview Lambda
-    const translateMovieReviewFn = new lambdanode.NodejsFunction(
-      this,
-      "TranslateMovieReviewFn",
-      {
-        architecture: lambda.Architecture.ARM_64,
-        runtime: lambda.Runtime.NODEJS_18_X,
-        entry: `${__dirname}/../lambdas/getTranslateMovieReview.ts`,
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 128,
-        environment: {
-          REVIEWS_TABLE_NAME: reviewsTable.tableName,
-          REGION: "eu-west-1",
-        },
-      }
-    );
+    // NEW: getTranslateMovieReview Lambda
+    const getTranslateMovieReviewFn = new lambdanode.NodejsFunction(this, "GetTranslateMovieReviewFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/getTranslateMovieReview.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        REVIEWS_TABLE_NAME: reviewsTable.tableName,
+        REGION: "eu-west-1",
+        TRANSLATE_LAMBDA_ARN: translateFn.functionArn,  // Pass the ARN
+      },
+    });
 
     new custom.AwsCustomResource(this, "moviesddbInitData", {
       onCreate: {
@@ -203,12 +211,23 @@ export class RestAPIStack extends cdk.Stack {
           RequestItems: {
             [moviesTable.tableName]: generateBatch(movies),
             [movieCastsTable.tableName]: generateBatch(movieCasts),
+            [reviewsTable.tableName]: movieReviews.map(review => ({
+              PutRequest: {
+                Item: {
+                  movieId: { N: review.movieId.toString() },
+                  reviewId: { S: review.ReviewId },
+                  ReviewerId: { S: review.ReviewerId },
+                  Content: { S: review.Content },
+                  ReviewDate: { S: review.ReviewDate },
+                },
+              },
+            })),
           },
         },
         physicalResourceId: custom.PhysicalResourceId.of("moviesddbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [moviesTable.tableArn, movieCastsTable.tableArn],
+        resources: [moviesTable.tableArn, movieCastsTable.tableArn, reviewsTable.tableArn],
       }),
     });
 
@@ -223,7 +242,8 @@ export class RestAPIStack extends cdk.Stack {
     reviewsTable.grantReadData(getMovieReviewsFn);
     reviewsTable.grantReadWriteData(postMovieReviewFn);
     reviewsTable.grantReadWriteData(updateMovieReviewFn);
-    reviewsTable.grantReadData(translateMovieReviewFn);
+    reviewsTable.grantReadData(getTranslateMovieReviewFn);
+    translateFn.grantInvoke(getTranslateMovieReviewFn);
 
     const api = new apig.RestApi(this, "RestAPI", {
       description: "demo api",
@@ -260,12 +280,10 @@ export class RestAPIStack extends cdk.Stack {
 
     // Detail movie endpoint
     const specificMovieEndpoint = moviesEndpoint.addResource("{movieId}");
-
     specificMovieEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
     );
-
     specificMovieEndpoint.addMethod(
       "DELETE",
       new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
@@ -273,7 +291,6 @@ export class RestAPIStack extends cdk.Stack {
 
     // NEW: Movie Reviews endpoint
     const movieReviewsEndpoint = specificMovieEndpoint.addResource("reviews");
-
     movieReviewsEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieReviewsFn, { proxy: true }),
@@ -285,34 +302,18 @@ export class RestAPIStack extends cdk.Stack {
       }
     );
 
-    movieReviewsEndpoint.addMethod('POST', new apig.LambdaIntegration(postMovieReviewFn), {
-      authorizer: new apig.CognitoUserPoolsAuthorizer(this, 'UserPoolAuthorizer', {
-        cognitoUserPools: [
-          cognito.UserPool.fromUserPoolId(this, 'UserPool', process.env.COGNITO_USER_POOL_ID || 'your-user-pool-id')
-        ],
-        authorizerName: 'MovieReviewsAuthorizer'
-      }),
-      authorizationType: apig.AuthorizationType.COGNITO,
-    });
-
     const specificReviewEndpoint = movieReviewsEndpoint.addResource("{reviewId}");
-
     specificReviewEndpoint.addMethod(
       "PUT",
       new apig.LambdaIntegration(updateMovieReviewFn, { proxy: true })
     );
 
-    // NEW: Translation endpoint
     const translationEndpoint = specificReviewEndpoint.addResource("translation");
-
-    translationEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(translateMovieReviewFn, { proxy: true }),
-      {
-        requestParameters: {
-          "method.request.querystring.language": false,
-        },
-      }
-    );
+        translationEndpoint.addMethod("GET", new apig.LambdaIntegration(getTranslateMovieReviewFn, { proxy: true }),
+            {
+                requestParameters: {
+                    "method.request.querystring.language": false
+                }
+            });
   }
 }

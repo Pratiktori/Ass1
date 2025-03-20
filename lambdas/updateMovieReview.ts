@@ -27,28 +27,15 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       };
     }
 
-    // Get reviewerId from JWT claims if available
-    const reviewerId = event.requestContext?.authorizer?.jwt?.claims?.email;
-
-    if (!reviewerId) {
-      return {
-        statusCode: 401,
-        body: JSON.stringify({ message: "Unauthorized" }),
-      };
-    }
-
     const updateCommand = new UpdateCommand({
       TableName: "MovieReviews",
       Key: {
         movieId: parseInt(movieId),
-        reviewId: parseInt(reviewId), // Ensure reviewId is a number
+        reviewId: reviewId,
       },
-      UpdateExpression: "set content = :content, reviewDate = :reviewDate",
-      ConditionExpression: "ReviewerId = :reviewerId", // Ensure only owner can update
+      UpdateExpression: "set content = :content",
       ExpressionAttributeValues: {
         ":content": content,
-        ":reviewDate": new Date().toISOString().split("T")[0], // Update reviewDate
-        ":reviewerId": reviewerId,
       },
       ReturnValues: "ALL_NEW",
     });
@@ -62,12 +49,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   } catch (error) {
     console.error("Error:", error);
-    if (error.name === "ConditionalCheckFailedException") {
-      return {
-        statusCode: 403,
-        body: JSON.stringify({ message: "Forbidden: You are not authorized to update this review" }),
-      };
-    }
     return {
       statusCode: 500,
       body: JSON.stringify({ message: "Internal server error", error }),

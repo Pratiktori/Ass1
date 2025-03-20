@@ -1,4 +1,4 @@
-import { Movie, MovieCast } from '../shared/types';
+import { Movie, MovieCast, MovieReviews } from '../shared/types';
 
 export const movies : Movie[] = [
   {
@@ -321,9 +321,7 @@ export const movies : Movie[] = [
     vote_average: 7.4,
     vote_count: 325
   }
-]
-
-
+];
 
 export const movieCasts: MovieCast[] = [
   { movieId: 1234, actorName: "Joe Bloggs", roleName: "Male Character 1", roleDescription: "description of character 1" },
@@ -332,3 +330,26 @@ export const movieCasts: MovieCast[] = [
   { movieId: 2345, actorName: "Joe Bloggs", roleName: "Male Character 1", roleDescription: "description of character 3" },
 ];
 
+export const movieReviews: MovieReviews[] = [
+    {
+        movieId: 1234,
+        ReviewId: "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        ReviewerId: "user1@example.com",
+        Content: "A visually stunning but ultimately empty space opera.",
+        ReviewDate: "2024-03-27"
+    },
+    {
+        movieId: 2345,
+        ReviewId: "b2c3d4e5-f678-9012-3456-7890abcdef01",
+        ReviewerId: "user2@example.com",
+        Content: "Aquaman 2 is a decent superhero movie.",
+        ReviewDate: "2024-03-27"
+    },
+    {
+        movieId: 3456,
+        ReviewId: "c3d4e5f6-7890-1234-5678-90abcdef0123",
+        ReviewerId: "critic1@example.com",
+        Content: "A solid prequel that expands on the Hunger Games universe.",
+        ReviewDate: "2024-03-27"
+    }
+];
