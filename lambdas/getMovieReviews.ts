@@ -6,43 +6,54 @@ const ddbClient = new DynamoDBClient({ region: 'eu-west-1' });
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
-  try {
-    console.log("[EVENT]", JSON.stringify(event));
-    const movieId = event.pathParameters?.movieId;
+    try {
+        console.log("[EVENT]", JSON.stringify(event));
+        const movieId = event.pathParameters?.movieId;
 
-    if (!movieId) {
-      return {
-        statusCode: 400,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Missing movie ID in path" }),
-      };
+        if (!movieId) {
+            return {
+                statusCode: 400,
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ message: "Missing movie ID in path" }),
+            };
+        }
+
+        // Parse the movieId to Number
+        const movieIdNumber = Number(movieId);
+        if (isNaN(movieIdNumber)) {
+            return {
+                statusCode: 400,
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ message: "Invalid movie ID, must be a number" }),
+            };
+        }
+
+        const params = {
+            TableName: 'MovieReviews',
+            KeyConditionExpression: "movieId = :movieId",
+            ExpressionAttributeValues: {
+                ":movieId": movieIdNumber,
+            },
+        };
+
+        const command = new QueryCommand(params);
+        const result = await ddbDocClient.send(command);
+
+        return {
+            statusCode: 200,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+                data: result.Items,
+                count: result.Count
+            }),
+        };
+
+    } catch (error) {
+        console.error("[ERROR]", error);
+        return {
+            statusCode: 500,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ error: "Internal server error" }),
+        };
     }
-
-    const params = {
-      TableName: 'MovieReviews',
-      KeyConditionExpression: "movieId = :movieId",
-      ExpressionAttributeValues: {
-        ":movieId":  { N: movieId }
-      },
-    };
-    const command = new QueryCommand(params);
-    const result = await ddbDocClient.send(command);
-
-    return {
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        data: result.Items,
-        count: result.Count
-      }),
-    };
-
-  } catch (error) {
-    console.error("[ERROR]", error);
-    return {
-      statusCode: 500,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: "Internal server error" }),
-    };
-  }
 };

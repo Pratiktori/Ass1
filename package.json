@@ -2,13 +2,15 @@
   "name": "simple-app",
   "version": "0.1.0",
   "bin": {
-    "simple-app": "bin/simple-app.js"
+    "simple-app": "bin/simple-app.js",
+    "aws-serverless-auth": "bin/aws-serverless-auth.js"
   },
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
     "cdk": "cdk",
-    "schema": "typescript-json-schema --noExtraProps --required --refs false -o ./shared/types.schema.json  \"./shared/types.d.ts\" \"*\""
+    "schema": "typescript-json-schema --noExtraProps --required --refs false -o ./shared/types.schema.json  \"./shared/types.d.ts\" \"*\"",
+    "test": "jest"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.147",

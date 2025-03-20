@@ -101,7 +101,7 @@ export class AuthAppStack extends cdk.Stack {
         resultsCacheTtl: cdk.Duration.minutes(0),
       }
     );
-
+    //authorizer
     protectedRes.addMethod("GET", new apig.LambdaIntegration(protectedFn), {
       authorizer: requestAuthorizer,
       authorizationType: apig.AuthorizationType.CUSTOM,

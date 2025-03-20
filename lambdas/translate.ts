@@ -26,7 +26,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         const translationResult = await translateClient.send(translateCommand);
         return {
             statusCode: 200,
-            body: JSON.stringify({ translatedText: translationResult.TranslatedText }),
+            body: JSON.stringify({ TranslatedText: translationResult.TranslatedText }),
         };
     } catch (error) {
         console.error('error in the translation', error);

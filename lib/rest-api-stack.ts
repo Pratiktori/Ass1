@@ -280,6 +280,7 @@ export class RestAPIStack extends cdk.Stack {
 
     // Detail movie endpoint
     const specificMovieEndpoint = moviesEndpoint.addResource("{movieId}");
+
     specificMovieEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
@@ -288,9 +289,8 @@ export class RestAPIStack extends cdk.Stack {
       "DELETE",
       new apig.LambdaIntegration(deleteMovieFn, { proxy: true })
     );
+        const movieReviewsEndpoint = specificMovieEndpoint.addResource("reviews");
 
-    // NEW: Movie Reviews endpoint
-    const movieReviewsEndpoint = specificMovieEndpoint.addResource("reviews");
     movieReviewsEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getMovieReviewsFn, { proxy: true }),
@@ -300,6 +300,11 @@ export class RestAPIStack extends cdk.Stack {
           "method.request.querystring.reviewerEmail": false,
         },
       }
+    );
+
+    movieReviewsEndpoint.addMethod(
+      "POST",
+      new apig.LambdaIntegration(postMovieReviewFn, { proxy: true })
     );
 
     const specificReviewEndpoint = movieReviewsEndpoint.addResource("{reviewId}");
