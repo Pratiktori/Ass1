@@ -243,6 +243,7 @@ export class RestAPIStack extends cdk.Stack {
     reviewsTable.grantReadWriteData(postMovieReviewFn);
     reviewsTable.grantReadWriteData(updateMovieReviewFn);
     reviewsTable.grantReadData(getTranslateMovieReviewFn);
+        reviewsTable.grantReadWriteData(updateMovieReviewFn);  // This line has the most permissions
     translateFn.grantInvoke(getTranslateMovieReviewFn);
 
     const api = new apig.RestApi(this, "RestAPI", {

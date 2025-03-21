@@ -84,9 +84,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         if (translateResult.Payload) {
             const payloadString = new TextDecoder().decode(translateResult.Payload);
             const payload = JSON.parse(payloadString);
-            const translatedText = payload.TranslatedText;
+            console.log("Payload:", payload);
 
-            if (!translatedText) {
+            if (!payload || !payload.TranslatedText) {
                 return {
                     statusCode: 500,
                     body: JSON.stringify({ message: "No translated text received" }),
@@ -96,7 +96,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
             return {
                 statusCode: 200,
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ translatedContent: translatedText }),
+                body: JSON.stringify({ translatedContent: payload.TranslatedText }),
             };
         } else {
             console.error("No payload received from translation Lambda");
