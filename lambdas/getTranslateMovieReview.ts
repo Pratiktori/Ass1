@@ -1,120 +1,133 @@
-import { APIGatewayProxyHandlerV2 } from "aws-lambda";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
-import { LambdaClient, InvokeCommand, InvokeCommandInput } from "@aws-sdk/client-lambda";
-import { TextDecoder } from 'util';
-
-const ddbDocClient = createDDbDocClient();
-const lambdaClient = new LambdaClient({ region: process.env.REGION || 'eu-west-1' });
-
-export const handler: APIGatewayProxyHandlerV2 = async (event) => {
-    try {
-        console.log("[EVENT]", JSON.stringify(event));
-
-        const reviewId = event.pathParameters?.reviewId;
-        const movieId = event.pathParameters?.movieId;
-        const languageCode = event.queryStringParameters?.language;
-
-        if (!reviewId || !movieId) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ message: "Missing reviewId or movieId in path" }),
-            };
-        }
-
-        if (!languageCode) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ message: "Missing language code in query string" }),
-            };
-        }
-
-        // Ensure movieId is a number before parsing
-        const movieIdNumber = Number(movieId);
-        if (isNaN(movieIdNumber)) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ message: "Invalid movieId, must be a number" }),
-            };
-        }
-
-        const getCommand = new GetCommand({
-            TableName: process.env.REVIEWS_TABLE_NAME,
-            Key: {
-                movieId: movieIdNumber,
-                reviewId: reviewId,
-            },
-        });
-
-        const reviewResult = await ddbDocClient.send(getCommand);
-
-        if (!reviewResult.Item) {
-            return {
-                statusCode: 404,
-                body: JSON.stringify({ message: "Review not found" }),
-            };
-        }
-
-        const reviewContent = reviewResult.Item.Content;
-
-        if (!reviewContent) {
-            return {
-                statusCode: 404,
-                body: JSON.stringify({ message: "Review content not found" }),
-            };
-        }
-
-        const translateParams: InvokeCommandInput = {
-            FunctionName: process.env.TRANSLATE_LAMBDA_ARN,
-            InvocationType: "RequestResponse",
-            Payload: JSON.stringify({ text: reviewContent, language: languageCode }),
-        };
-
-        const translateCommand = new InvokeCommand(translateParams);
-        const translateResult = await lambdaClient.send(translateCommand);
-
-        if (translateResult.StatusCode !== 200) {
-            console.error("Translation failed:", translateResult);
-            return {
-                statusCode: 502,
-                body: JSON.stringify({ message: "Translation service error" }),
-            };
-        }
-
-        if (translateResult.Payload) {
-            const payloadString = new TextDecoder().decode(translateResult.Payload);
-            const payload = JSON.parse(payloadString);
-            console.log("Payload:", payload);
-
-            if (!payload || !payload.TranslatedText) {
-                return {
-                    statusCode: 500,
-                    body: JSON.stringify({ message: "No translated text received" }),
-                };
-            }
-
-            return {
-                statusCode: 200,
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ translatedContent: payload.TranslatedText }),
-            };
-        } else {
-            console.error("No payload received from translation Lambda");
-            return {
-                statusCode: 500,
-                body: JSON.stringify({ message: "Internal server error: No translation received" }),
-            };
-        }
-    } catch (error) {
-        console.error("Error:", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ message: "Internal server error", error }),
-        };
+import {
+    APIGatewayProxyHandlerV2,
+    APIGatewayProxyEventV2,
+    APIGatewayProxyResultV2,
+  } from "aws-lambda";
+  import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+  import {
+    DynamoDBDocumentClient,
+    GetCommand,
+    UpdateCommand,
+  } from "@aws-sdk/lib-dynamodb";
+  import { TranslateClient, TranslateTextCommand } from "@aws-sdk/client-translate";
+  
+  const region = process.env.REGION || "eu-west-1";
+  const ddbClient = new DynamoDBClient({ region });
+  const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
+  const translateClient = new TranslateClient({ region });
+  
+  export const handler: APIGatewayProxyHandlerV2 = async (
+    event: APIGatewayProxyEventV2
+  ): Promise<APIGatewayProxyResultV2> => {
+    console.log("Event received:", JSON.stringify(event));
+  
+    const reviewId = event.pathParameters?.reviewId;
+    const movieId = event.pathParameters?.movieId;
+    const targetLanguage = event.queryStringParameters?.language;
+  
+    if (!reviewId || !movieId || !targetLanguage) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "Missing reviewId, movieId, or language query parameter.",
+        }),
+      };
     }
-};
-
-function createDDbDocClient() {
-    const ddbClient = new DynamoDBClient({ region: process.env.REGION || 'eu-west-1' });
-    return DynamoDBDocumentClient.from(ddbClient);
-}
+  
+    const tableName = process.env.TABLE_NAME;
+    if (!tableName) {
+      console.error("TABLE_NAME environment variable is not set.");
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          message: "Internal server error: TABLE_NAME not set",
+        }),
+      };
+    }
+    // 1. Retrieve the review from DynamoDB
+    const getParams = {
+      TableName: tableName,
+      Key: {
+        movieId: Number(movieId),
+        reviewId: reviewId,
+      },
+    };
+  
+    try {
+      const { Item } = await ddbDocClient.send(new GetCommand(getParams));
+  
+      if (!Item || !Item.Content) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ message: "Review not found" }),
+        };
+      }
+  
+      const translations = (Item as any).translations || {};
+  
+      if (translations[targetLanguage]) {
+        console.log("Returning cached translation.");
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            translatedText: translations[targetLanguage],
+            cached: true,
+          }),
+        };
+      }
+  
+      // 3. Otherwise, use Amazon Translate to translate the review
+      const originalText = Item.Content;
+  
+      const translateParams = {
+        Text: originalText,
+        SourceLanguageCode: "en",
+        TargetLanguageCode: targetLanguage,
+      };
+  
+      const translateResult = await translateClient.send(
+        new TranslateTextCommand(translateParams)
+      );
+  
+      const translatedText = translateResult.TranslatedText;
+  
+      // 4. Update the DynamoDB item to cache the new translation
+      const updateParams = {
+        TableName: tableName,
+        Key: {
+          movieId: Number(movieId),
+          reviewId: reviewId,
+        },
+         UpdateExpression: "SET #translations.#lang = :translatedText",
+              ExpressionAttributeNames: {
+                  "#translations": "translations",
+                  "#lang": targetLanguage,
+              },
+              ExpressionAttributeValues: {
+                  ":translatedText": translatedText,
+              },
+        ReturnValues: "UPDATED_NEW" as const,
+      };
+  
+      await ddbDocClient.send(new UpdateCommand(updateParams));
+      console.log("Translation cached in DynamoDB.");
+  
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          translatedText,
+          cached: false,
+        }),
+      };
+    } catch (error) {
+      console.error("Error in translation endpoint:", error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          message: "Internal server error",
+          error: (error as Error).message,
+        }),
+      };
+    }
+  };
+  
